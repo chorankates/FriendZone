@@ -346,6 +346,133 @@ wdel 0x<attrib> <wcard>
 
 ok, so these creds are not important for SMB
 
+### back to 53
+
+```
+$ dig axfr 10.10.10.123 @10.10.10.123
+
+; <<>> DiG 9.18.1-1ubuntu1.1-Ubuntu <<>> axfr 10.10.10.123 @10.10.10.123
+;; global options: +cmd
+; Transfer failed.
+```
+
+was hopeful that would give us some new targets, especially thinking about
+> if yes, try to get out of this zone ;)
+
+specifically `zone`
+
+```
+Nmap scan report for friendzone.htb (10.10.10.123)
+Host is up (0.055s latency).
+Not shown: 997 closed ports
+PORT    STATE         SERVICE
+53/udp  open          domain
+137/udp open          netbios-ns
+138/udp open|filtered netbios-dgm
+...
+$ sudo nmap -sUV -T4 -p 53,137,138 friendzone.htb
+Starting Nmap 7.80 ( https://nmap.org ) at 2022-09-05 08:31 MDT
+Nmap scan report for friendzone.htb (10.10.10.123)
+Host is up (0.058s latency).
+
+PORT    STATE         SERVICE     VERSION
+53/udp  open          domain      ISC BIND 9.11.3-1ubuntu1.2 (Ubuntu Linux)
+137/udp open          netbios-ns  Samba nmbd netbios-ns (workgroup: WORKGROUP)
+138/udp open|filtered netbios-dgm
+Service Info: Host: FRIENDZONE; OS: Linux; CPE: cpe:/o:linux:linux_kernel
+```
+
+```
+$ dig axfr @10.10.10.123 friendzone.htb
+
+; <<>> DiG 9.18.1-1ubuntu1.1-Ubuntu <<>> axfr @10.10.10.123 friendzone.htb
+; (1 server found)
+;; global options: +cmd
+; Transfer failed.
+...
+
+$ dig axfr @10.10.10.123 friendzoneportal.red
+
+; <<>> DiG 9.18.1-1ubuntu1.1-Ubuntu <<>> axfr @10.10.10.123 friendzoneportal.red
+; (1 server found)
+;; global options: +cmd
+friendzoneportal.red.   604800  IN      SOA     localhost. root.localhost. 2 604800 86400 2419200 604800
+friendzoneportal.red.   604800  IN      AAAA    ::1
+friendzoneportal.red.   604800  IN      NS      localhost.
+friendzoneportal.red.   604800  IN      A       127.0.0.1
+admin.friendzoneportal.red. 604800 IN   A       127.0.0.1
+files.friendzoneportal.red. 604800 IN   A       127.0.0.1
+imports.friendzoneportal.red. 604800 IN A       127.0.0.1
+vpn.friendzoneportal.red. 604800 IN     A       127.0.0.1
+friendzoneportal.red.   604800  IN      SOA     localhost. root.localhost. 2 604800 86400 2419200 604800
+;; Query time: 55 msec
+;; SERVER: 10.10.10.123#53(10.10.10.123) (TCP)
+;; WHEN: Mon Sep 05 08:35:51 MDT 2022
+;; XFR size: 9 records (messages 1, bytes 309)
+```
+
+imports.friendzoneportal.red is new
+                                   
+while adding this to /etc/hosts, saw that none of the subdomains had been added.. and sure enough `https://admin.friendzoneportal.red` actually gives us a username/password login.
+
+### admin.friendzoneportal.red
+
+logging in with the creds above does give us a 200, but
+> Admin page is not developed yet !!! check for another one
+
+
+curl'ing that gives us another domain
+
+```
+* Server certificate:
+*  subject: C=JO; ST=CODERED; L=AMMAN; O=CODERED; OU=CODERED; CN=friendzone.red; emailAddress=haha@friendzone.red
+*  start date: Oct  5 21:02:30 2018 GMT
+*  expire date: Nov  4 21:02:30 2018 GMT
+*  issuer: C=JO; ST=CODERED; L=AMMAN; O=CODERED; OU=CODERED; CN=friendzone.red; emailAddress=haha@friendzone.red
+*  SSL certificate verify result: self-signed certificate (18), continuing anyway.
+* TLSv1.2 (OUT), TLS header, Supplemental data (23):
+> GET /login.php HTTP/1.1
+> Host: admin.friendzoneportal.red
+> User-Agent: curl/7.81.0
+> Accept: */*
+```
+
+`friendzone.red`
+
+```
+$ curl -k https://friendzone.red
+<title>FriendZone escape software</title>
+
+<br>
+<br>
+
+
+<center><h2>Ready to escape from friend zone !</h2></center>
+
+
+<center><img src="e.gif"></center>
+
+<!-- Just doing some development here -->
+<!-- /js/js -->
+<!-- Don't go deep ;) -->
+```
+```
+$ curl -k https://friendzone.red/js/js/
+<p>Testing some functions !</p><p>I'am trying not to break things !</p>WnA2bmFSRVN0VzE2NjIzODkxOTJjWUtXMjBRMVFo<!-- dont stare too much , you will be smashed ! , it's all about times and zon
+es ! -->
+```
+
+so b64, but..
+
+```
+irb(main):001:0> require 'base64' #=> true
+irb(main):002:0> a = 'WnA2bmFSRVN0VzE2NjIzODkxOTJjWUtXMjBRMVFo'
+irb(main):003:0> b = Base64.decode64(a)
+irb(main):004:0> b #=> "Zp6naREStW1662389192cYKW20Q1Qh"
+irb(main):005:0> c = Base64.decode64(b)
+irb(main):006:0> c #=> "f\x9E\xA7i\x11\x12\xB5mz\xEBm\xFC\xF7_vq\x82\x96\xDBD5B"
+```
+
 
 ## flag
 ```
