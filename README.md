@@ -412,7 +412,7 @@ friendzoneportal.red.   604800  IN      SOA     localhost. root.localhost. 2 604
 ```
 
 imports.friendzoneportal.red is new
-                                   
+
 while adding this to /etc/hosts, saw that none of the subdomains had been added.. and sure enough `https://admin.friendzoneportal.red` actually gives us a username/password login.
 
 ### admin.friendzoneportal.red
@@ -473,6 +473,76 @@ irb(main):005:0> c = Base64.decode64(b)
 irb(main):006:0> c #=> "f\x9E\xA7i\x11\x12\xB5mz\xEBm\xFC\xF7_vq\x82\x96\xDBD5B"
 ```
 
+only other thing in the request is
+```
+Set-Cookie: zonedman=justgotzoned; expires=Mon, 05-Sep-2022 20:46:23 GMT; Max-Age=3600
+```
+
+that feels like it could be a password of some sort?
+
+```
+$ gobuster dir -k -u https://friendzone.red -r -t 40 -w ~/git/ctf/tools/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt -x php
+/admin                (Status: 200) [Size: 742]
+/js                   (Status: 200) [Size: 922]
+/server-status        (Status: 403) [Size: 303]
+```
+
+not the admin we're looking for, it's 404.. oi.
+
+```
+irb(main):001:0> a = 'WnA2bmFSRVN0VzE2NjIzODkxOTJjWUtXMjBRMVFo'
+irb(main):002:0> a.freeze   #=> "WnA2bmFSRVN0VzE2NjIzODkxOTJjWUtXMjBRMVFo"
+irb(main):003:0> a.size   #=> 40
+irb(main):004:0> require 'base64' #=> true
+irb(main):005:0> b = Base64.decode64(a)
+irb(main):007:0> b #=> "Zp6naREStW1662389192cYKW20Q1Qh"
+irb(main):008:0> b.size   #=> 30
+irb(main):009:0> c = Base64.decode64(b)
+irb(main):010:0> c #=> "f\x9E\xA7i\x11\x12\xB5mz\xEBm\xFC\xF7_vq\x82\x96\xDBD5B"
+irb(main):011:0> c.size   #=> 22
+irb(main):012:0> d = Base64.decode64(c)
+irb(main):013:0> d #=> "~)\xB3\x9A\xFA\x83\xE4"
+irb(main):014:0> d.size   #=> 7
+irb(main):015:0>
+```
+
+feels like `b` is the hash we need to attack
+  * base64 - no, hex and not magic
+  * base32 - no, `p` is invalid
+  * base85 - no, missing header
+  * base91 - no, hex and not magic
+  * encryption? with `zonedman` or `justgotzoned` as a key?
+    * vigenere gives us `Qv6vhLQZuI1662389192pUHN20W1Yo` with `JUSTGOTZONED` and `Ab6awOSSgX1662389192oLGT20E1Qu` with `ZONEDMAN`
+
+it's definitely encryption - and it looks like the value of the `zonedman` cookie is the salt or the key:
+
+sending `zonedman=f` instead, got `R2Z0enhmQTltVzE2NjI0MTAzMzlzdUtDN3FlUjJ5`
+sending `zonedman=f` again.. got  `RU5QWDVxYWZKbDE2NjI0MTA0MTdKdkUzRk5PYXhw`.. wait.
+
+it's not the `zonedman` value, it's the time. convert the time to an int and use that as IV?
+
+
+`zonedman=justgotzoned`:
+```
+HTTP/1.1 200 OK
+Date: Mon, 05 Sep 2022 20:40:44 GMT
+Server: Apache/2.4.29 (Ubuntu)
+Set-Cookie: zonedman=justgotzoned; expires=Mon, 05-Sep-2022 21:40:44 GMT; Max-Age=3600
+Vary: Accept-Encoding
+Content-Length: 198
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+<p>Testing some functions !</p><p>I'am trying not to break things !</p>
+T0lNRlhxdzR6STE2NjI0MTA0NDQxTTk2TXJsaVhi<!-- dont stare too much , you will be smashed ! , it's all about times and zones ! -->
+```
+
+```
+irb(main):012:0> a = Time.parse('Mon, 05 Sep 2022 20:40:44 GMT')
+irb(main):013:0> a.to_i   #=> 1662410444
+```
+
+can't be AES, since the key isn't 16 bytes
 
 ## flag
 ```
