@@ -544,6 +544,84 @@ irb(main):013:0> a.to_i   #=> 1662410444
 
 can't be AES, since the key isn't 16 bytes
 
+### coming back
+
+```
+$ dig axfr friendzone.red @10.10.10.123
+
+; <<>> DiG 9.18.1-1ubuntu1.2-Ubuntu <<>> axfr friendzone.red @10.10.10.123
+;; global options: +cmd
+friendzone.red.         604800  IN      SOA     localhost. root.localhost. 2 604800 86400 2419200 604800
+friendzone.red.         604800  IN      AAAA    ::1
+friendzone.red.         604800  IN      NS      localhost.
+friendzone.red.         604800  IN      A       127.0.0.1
+administrator1.friendzone.red. 604800 IN A      127.0.0.1
+hr.friendzone.red.      604800  IN      A       127.0.0.1
+uploads.friendzone.red. 604800  IN      A       127.0.0.1
+friendzone.red.         604800  IN      SOA     localhost. root.localhost. 2 604800 86400 2419200 604800
+;; Query time: 59 msec
+;; SERVER: 10.10.10.123#53(10.10.10.123) (TCP)
+;; WHEN: Tue Feb 28 19:19:33 MST 2023
+;; XFR size: 8 records (messages 1, bytes 289)
+
+```
+
+GETting the https version of `administrator1.friendzone.red` gives us another login form - same creds?
+
+same creds.
+
+```
+HTTP/1.1 200 OK
+Date: Wed, 01 Mar 2023 02:23:07 GMT
+Server: Apache/2.4.29 (Ubuntu)
+Set-Cookie: FriendZoneAuth=e7749d0f4b4da5d03e6e9196fd1d18f1; expires=Fri, 31-Mar-2023 02:23:07 GMT; Max-Age=2592000
+Content-Length: 33
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+Login Done ! visit /dashboard.php
+```
+
+> Smart photo script for friendzone corp !
+> * Note : we are dealing with a beginner php developer and the application is not tested yet !
+> image_name param is missed !
+> please enter it to show the image
+> default is image_id=a.jpg&pagename=timestamp
+
+looks like an LFI opportunity
+
+```
+$ curl -k -X POST https://administrator1.friendzone.red/dashboard.php -d 'image_id=a.jpg&pagename=timestamp'
+<title>FriendZone Admin !</title><center><p>You can't see the content ! , please login !</center></p>
+$ curl -H 'Cookie: FriendZoneAuth=e7749d0f4b4da5d03e6e9196fd1d18f1' -k -X POST https://administrator1.friendzone.red/dashboard.php -d 'image_id=a.jpg&pagename=timestamp'
+<title>FriendZone Admin !</title><br><br><br><center><h2>Smart photo script for friendzone corp !</h2></center><center><h3>* Note : we are dealing with a beginner php developer and the application is not tested yet !</h3></center><br><br><center><p>image_name param is missed !</p></center><center><p>please enter it to show the image</p></center><center><p>default is image_id=a.jpg&pagename=timestamp</p></center>
+$ curl -H 'Cookie: FriendZoneAuth=e7749d0f4b4da5d03e6e9196fd1d18f1' -k -X POST 'https://administrator1.friendzone.red/dashboard.php?image_id=a.jpg&pagename=timestamp'
+<title>FriendZone Admin !</title><br><br><br><center><h2>Smart photo script for friendzone corp !</h2></center><center><h3>* Note : we are dealing with a beginner php developer and the application is not tested yet !</h3></center><center><img src='images/a.jpg'></center><center><h1>Something went worng ! , the script include wrong param !</h1></center>Final Access timestamp is 1677641160
+```
+
+ok, finally got it.
+
+what's with the `Final Access timestamp is <ctime>`?
+
+```
+irb(main):002:0> Time.at(1677641160)   #=> 2023-02-28 20:26:00 -0700
+irb(main):003:0> Time.now              #=> 2023-02-28 19:31:45.504572479 -0700
+```
+
+ok, so we're ~125 minutes off
+
+.. timestamp?
+
+```
+$ curl -H 'Cookie: FriendZoneAuth=e7749d0f4b4da5d03e6e9196fd1d18f1' -k https://administrator1.friendzone.red/timestamp.php
+Final Access timestamp is 1677641769
+```
+
+ok - _that_ is LFI
+
+change `pagename=timestamp` to .. what?
+
+
 ## flag
 ```
 user:
